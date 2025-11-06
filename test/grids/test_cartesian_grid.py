@@ -2,7 +2,7 @@ import pytest
 import torch
 import numpy as np
 from pytest import mark
-from cryolike.grids.cartesian_grid import SquaredCartesianGrid2D
+from cryolike.grid.cartesian_grid import SquaredCartesianGrid2D
 
 from cryolike.util.precision import set_precision
 

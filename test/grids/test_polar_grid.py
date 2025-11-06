@@ -6,7 +6,7 @@ from enum import Enum
 import math
 from pytest import mark, fixture, raises
 
-from cryolike.grids import UniformPolarGrid, QuadratureType
+from cryolike.grid import UniformPolarGrid, QuadratureType
 from cryolike.util import ensure_positive, get_float_dtype, set_precision
 
 PRECISION_PARAMS = [

@@ -6,7 +6,7 @@ import torch
 from dataclasses import dataclass
 from importlib.util import find_spec
 
-from cryolike.grids import (
+from cryolike.grid import (
     SquaredCartesianGrid2D,
     UniformPolarGrid,
 )

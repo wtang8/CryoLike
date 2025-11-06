@@ -4,7 +4,7 @@ import pytest
 from pytest import mark, raises
 from unittest.mock import patch, MagicMock
 
-from cryolike.grids import UniformPolarGrid, SquaredCartesianGrid2D, QuadratureType
+from cryolike.grid import UniformPolarGrid, SquaredCartesianGrid2D, QuadratureType
 from cryolike.stack.image import PhysicalImages, FourierImages
 from cryolike.util import PrecisionLevel, get_complex_dtype
 
