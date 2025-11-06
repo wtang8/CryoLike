@@ -27,11 +27,9 @@ class UniformPolarGrid:
         n_shells (int): Number of radial shells
         n_points (int): Total number of points in the grid
         radius_shells (torch.Tensor): Radii of each radial shell, shape (n_shells,)
-        radius_points (torch.Tensor): Radii of each point, shape (n_shells * n_inplanes,)
         theta_shell (torch.Tensor): Angles within a shell, shape (n_inplanes,)
-        theta_points (torch.Tensor): Angles of each point, shape (n_shells * n_inplanes,)
         weight_shells (torch.Tensor): Quadrature weights per shell, shape (n_shells,)
-        weight_points (torch.Tensor): Quadrature weights per point, shape (n_shells * n_inplanes,)
+        weight_points (torch.Tensor): Quadrature weights per point, shape (n_shells, n_inplanes)
         x_points (torch.Tensor): X-coordinates of each point
         y_points (torch.Tensor): Y-coordinates of each point
     """
@@ -43,9 +41,7 @@ class UniformPolarGrid:
     n_shells: int = field(init=False)
     n_points: int = field(init=False)
     radius_shells: torch.Tensor = field(init=False)
-    radius_points: torch.Tensor = field(init=False)
     theta_shell: torch.Tensor = field(init=False)
-    theta_points: torch.Tensor = field(init=False)
     weight_shells: torch.Tensor = field(init=False)
     weight_points: torch.Tensor = field(init=False)
     x_points: torch.Tensor = field(init=False)
@@ -78,20 +74,16 @@ class UniformPolarGrid:
         """Construct the full polar grid from radial shells."""
         self.n_points = self.n_shells * self.n_inplanes
         
-        # Expand radial coordinates
-        self.radius_points = self.radius_shells.repeat_interleave(self.n_inplanes)
-        
         # Angular coordinates
         theta_shell = np.linspace(0, 2 * np.pi, self.n_inplanes, endpoint=False)
         self.theta_shell = torch.from_numpy(theta_shell).to(dtype=float_dtype)
-        self.theta_points = self.theta_shell.repeat(self.n_shells)
         
         # Weights (angular integration factor already included)
-        self.weight_points = (self.weight_shells / self.n_inplanes).repeat_interleave(self.n_inplanes)
+        self.weight_points = (self.weight_shells / self.n_inplanes).unsqueeze(1).repeat(1, self.n_inplanes)
         
         # Cartesian coordinates
-        self.x_points = self.radius_points * torch.cos(self.theta_points)
-        self.y_points = self.radius_points * torch.sin(self.theta_points)
+        self.x_points = self.radius_shells[:,None] * torch.cos(self.theta_shell)[None,:]
+        self.y_points = self.radius_shells[:,None] * torch.sin(self.theta_shell)[None,:]
 
     def _gauss_jacobi(self, beta: int):
         """Initialize radial grid using Gauss-Jacobi quadrature.
@@ -116,7 +108,7 @@ class UniformPolarGrid:
         if beta == 1:
             # Weight includes r factor from polar coordinates
             self.weight_shells = jac_weights * (2.0 * np.pi) * (self.radius_max / 2.0) ** 2
-        elif beta == 2:
+        else: # beta == 2
             # Weight includes 1/r factor (for special applications)
             self.weight_shells = jac_weights * (2.0 * np.pi / self.radius_shells) * (self.radius_max / 2.0) ** 3
 
@@ -138,7 +130,7 @@ class UniformPolarGrid:
     def __repr__(self) -> str:
         return (f"UniformPolarGrid(radius_max={self.radius_max}, "
                 f"dist_radii={self.dist_radii}, n_inplanes={self.n_inplanes}, "
-                f"quadrature={self.quadrature.value}, "
+                f"quadrature='{self.quadrature.value}', "
                 f"n_shells={self.n_shells}, n_points={self.n_points})")
 
     def to(self, dtype: torch.dtype, device: str | torch.device):
@@ -151,20 +143,26 @@ class UniformPolarGrid:
         Returns:
             self: Returns self for method chaining
         """
-        if hasattr(self, 'radius_shells'):
-            self.radius_shells = self.radius_shells.to(dtype=dtype, device=device)
-            self.weight_shells = self.weight_shells.to(dtype=dtype, device=device)
-        
-        if hasattr(self, 'radius_points'):
-            self.radius_points = self.radius_points.to(dtype=dtype, device=device)
-            self.theta_shell = self.theta_shell.to(dtype=dtype, device=device)
-            self.theta_points = self.theta_points.to(dtype=dtype, device=device)
-            self.weight_points = self.weight_points.to(dtype=dtype, device=device)
-            self.x_points = self.x_points.to(dtype=dtype, device=device)
-            self.y_points = self.y_points.to(dtype=dtype, device=device)
-        
+        for attr_name in self.__dict__:
+            attr = getattr(self, attr_name, None)
+            if isinstance(attr, torch.Tensor):
+                setattr(self, attr_name, attr.to(dtype=dtype, device=device))
         return self
+    
+    def integrate(self, f: torch.Tensor) -> torch.Tensor:
+        """Integrate a function defined on the polar grid using quadrature weights.
 
+        Args:
+            f: Function values at each grid point, shape (..., n_shells, n_inplanes)
+        Returns:
+            Integrated value(s) as a tensor
+        """
+        if f.ndim < 2:
+            raise ValueError(f"Input tensor must have more than 2 dimension, get shape {f.shape}")
+        if f.shape[-2] != self.n_shells or f.shape[-1] != self.n_inplanes:
+            raise ValueError(f"Input tensor shape {f.shape} does not match grid shape ({self.n_shells}, {self.n_inplanes})")
+        return torch.sum(f * self.weight_points.view(*([1] * (f.ndim - 2)), self.n_shells, self.n_inplanes), dim=(-2, -1))
+        
     def get_fourier_translation_kernel(
         self,
         x_displacements_angstrom: torch.Tensor,
@@ -203,10 +201,8 @@ class UniformPolarGrid:
         # Compute phase shift: exp(-2πi * (k · displacement))
         kernel = torch.exp(
             -2.0 * np.pi * 1j * (
-                x_pts[None, :] * x_disp[:, None] +
-                y_pts[None, :] * y_disp[:, None]
+                x_pts[None, :, :] * x_disp[:, None, None] +
+                y_pts[None, :, :] * y_disp[:, None, None]
             )
         )
-        
-        # Reshape to [n_displacements, n_shells, n_inplanes]
-        return kernel.reshape(-1, self.n_shells, self.n_inplanes)
+        return kernel
