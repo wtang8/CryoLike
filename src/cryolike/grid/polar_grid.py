@@ -16,7 +16,6 @@ class QuadratureType(Enum):
     GAUSS_LEGENDRE = 'gauss-legendre'
 
 
-@dataclass
 class UniformPolarGrid:
     """Class implementing uniform polar-coordinate grid.
 
@@ -39,30 +38,41 @@ class UniformPolarGrid:
     dist_radii: float
     n_inplanes: int
     quadrature: QuadratureType = QuadratureType.GAUSS_JACOBI_BETA_1
-    n_shells: int = field(init=False)
-    n_points: int = field(init=False)
-    radius_shells: torch.Tensor = field(init=False)
-    theta_shell: torch.Tensor = field(init=False)
-    weight_shells: torch.Tensor = field(init=False)
-    weight_points: torch.Tensor = field(init=False)
-    x_points: torch.Tensor = field(init=False)
-    y_points: torch.Tensor = field(init=False)
 
-    def __post_init__(self):
+    n_shells: int
+    n_points: int
+    radius_shells: torch.Tensor
+    theta_shell: torch.Tensor
+    weight_shells: torch.Tensor
+    weight_points: torch.Tensor
+    x_points: torch.Tensor
+    y_points: torch.Tensor
+
+    def __init__(
+        self,
+        radius_max: float,
+        dist_radii: float,
+        n_inplanes: int,
+        quadrature: QuadratureType = QuadratureType.GAUSS_JACOBI_BETA_1             
+    ):
         # Validate inputs
-        ensure_positive(self.radius_max, "radius_max")
-        ensure_positive(self.dist_radii, "dist_radii")
-        ensure_positive(self.n_inplanes, "n_inplanes")
+        ensure_positive(radius_max, "radius_max")
+        ensure_positive(dist_radii, "dist_radii")
+        ensure_positive(n_inplanes, "n_inplanes")
+        self.radius_max = radius_max
+        self.dist_radii = dist_radii
+        self.n_inplanes = n_inplanes
         
         # Initialize quadrature
-        if self.quadrature == QuadratureType.GAUSS_JACOBI_BETA_1:
+        if quadrature == QuadratureType.GAUSS_JACOBI_BETA_1:
             self._gauss_jacobi(beta=1)
-        elif self.quadrature == QuadratureType.GAUSS_JACOBI_BETA_2:
+        elif quadrature == QuadratureType.GAUSS_JACOBI_BETA_2:
             self._gauss_jacobi(beta=2)
-        elif self.quadrature == QuadratureType.GAUSS_LEGENDRE:
+        elif quadrature == QuadratureType.GAUSS_LEGENDRE:
             self._gauss_legendre()
         else:
-            raise ValueError(f"Unknown quadrature type: {self.quadrature}")
+            raise ValueError(f"Unknown quadrature type: {quadrature}")
+        self.quadrature = quadrature
         
         # Set precision and device
         float_dtype = get_float_dtype()
