@@ -6,6 +6,7 @@ from enum import Enum
 
 from cryolike.util.typechecks import ensure_positive
 from cryolike.util.precision import get_float_dtype
+from cryolike.util.device_handling import get_device
 
 
 class QuadratureType(Enum):
@@ -187,7 +188,7 @@ class UniformPolarGrid:
             torch.Tensor: Translation kernel of shape 
                 [n_displacements, n_shells, n_inplanes]
         """
-        device = device if torch.cuda.is_available() else torch.device('cpu')
+        device = get_device(device)
         float_dtype = get_float_dtype()
         
         # Convert displacements from Angstrom to normalized coordinates [-1, 1]

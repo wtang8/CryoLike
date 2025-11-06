@@ -12,3 +12,10 @@ from .precision import (
 from .typechecks import (
     ensure_positive,
 )
+from .device_handling import (
+    get_device
+)
+from .nufft_checks import (
+    check_nufft_installed,
+    get_epsilon
+)

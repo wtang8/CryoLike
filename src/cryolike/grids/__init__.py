@@ -1,2 +1,2 @@
 from .cartesian_grid import SquaredCartesianGrid2D
-from .polar_grid import UniformPolarGrid
+from .polar_grid import UniformPolarGrid, QuadratureType
