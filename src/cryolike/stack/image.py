@@ -3,37 +3,23 @@ import numpy as np
 import mrcfile
 from math import ceil
 import torch
-from torch import device, tensor, Tensor
 from dataclasses import dataclass
+from importlib.util import find_spec
 
 from cryolike.grids import (
     SquaredCartesianGrid2D,
     UniformPolarGrid,
 )
-# from cryolike.microscopy import (
-#     CTF,
-#     fourier_polar_to_cartesian_phys,
-#     cartesian_phys_to_fourier_polar,
-# )
 from cryolike.util import (
     ensure_positive,
     PrecisionLevel,
-    get_precision
-    # Cartesian_grid_2d_descriptor,
-    # ComplexArrayType,
-    # FloatArrayType,
-    # get_imgs_max,
-    # get_device,
-    # IntArrayType,
-    # NormType,
-    # Precision,
-    # project_descriptor,
-    # TargetType,
-    # to_torch,
+    get_precision,
+    get_device,
+    get_float_dtype,
+    get_complex_dtype,
+    check_nufft_installed,
+    get_epsilon
 )
-# from cryolike.metadata import (
-#     ViewingAngles
-# )
 
 
 @dataclass
@@ -43,7 +29,7 @@ class PhysicalImages:
     Attributes:
     """
     phys_grid: SquaredCartesianGrid2D
-    images_phys: Tensor
+    images_phys: torch.Tensor
     filename: Optional[str] = None
 
     @property
@@ -68,7 +54,7 @@ class PhysicalImages:
             raise ValueError(f"Dimension mismatch: expected images shape {expected_shape} but got {self.images_phys.shape}")
         
     @classmethod
-    def from_mrc(cls, filename: str, pixel_size: float, device: str | torch.device = 'cpu'):
+    def from_mrc(cls, filename: str, pixel_size: float):
         """Create a new set of physical images from an MRC file.
 
         Args:
@@ -94,7 +80,7 @@ class PhysicalImages:
             if len(imgs_phys.shape) == 2:
                 imgs_phys = imgs_phys[None, :, :]
             ensure_positive(pixel_size, "pixel size")
-            images_phys = torch.from_numpy(imgs_phys).to(device)
+            images_phys = torch.from_numpy(imgs_phys)
             if images_phys.shape[1] != images_phys.shape[2]:
                 raise ValueError("Non-square images are not supported yet.")
         if images_phys is None:
@@ -117,13 +103,15 @@ class PhysicalImages:
             mrc.set_data(self.images_phys)
             mrc.voxel_size = (self.pixel_size, self.pixel_size, 1.0)
 
-    def to(self, dtype: torch.dtype, device: str | torch.device) -> 'PhysicalImages':
+    def to(self, precision: PrecisionLevel, device: str | torch.device) -> 'PhysicalImages':
         """Convert all tensors in this object to the specified data type and device."""
+        device = get_device(device)
+        dtype = get_float_dtype(precision)
         self.phys_grid = self.phys_grid.to(dtype=dtype, device=device)
         self.images_phys = self.images_phys.to(dtype=dtype, device=device)
         return self
     
-    def normalize_images(self, ord: int = 1, use_max: bool = False) -> Tensor:
+    def normalize_images(self, ord: int = 1, use_max: bool = False) -> torch.Tensor:
         """Normalize the physical images in this collection.
 
         Args:
@@ -184,9 +172,11 @@ class PhysicalImages:
     def transform_to_fourier(
         self,
         polar_grid: UniformPolarGrid,
-        precision: PrecisionLevel | None = None,
-        device: str | device = 'cuda'
-    ):
+        precision: Optional[PrecisionLevel] = None,
+        compute_device: Optional[str | torch.device] = None,
+        storage_device: str | torch.device = 'cpu',
+        eps: Optional[float] = None,
+    ) -> FourierImages:
         """Transform the physical images in this collection to Fourier-space representation. Existing
         physical images are kept. The new Fourier-space images will be placed on the same device as the
         physical images.
@@ -204,23 +194,88 @@ class PhysicalImages:
         Raises:
             ValueError: If no polar grid exists on the collection already, and none is passed.
         """
-        if not torch.cuda.is_available():
-            device = 'cpu'
-        if precision is None:
-            precision = get_precision()
-        nufft_eps = 1e-12 if precision == PrecisionLevel.DOUBLE else 1e-5
-        raise NotImplementedError("Fourier transform not implemented yet.")
+        compute_device = get_device(compute_device)
+        storage_device = get_device(storage_device)
+        check_nufft_installed(compute_device)
+        precision = precision if precision is not None else get_precision()
+        print("Using device:", compute_device, ", Precision", precision.name, "for NUFFT in fourier_polar_to_cartesian_phys.")
+        torch_float_type = get_float_dtype(precision)
+        torch_complex_type = get_complex_dtype(precision)
+        eps = get_epsilon(precision, eps)
 
-        # self.images_fourier = cartesian_phys_to_fourier_polar(
-        #     grid_cartesian_phys = self.phys_grid,
-        #     grid_fourier_polar = self.polar_grid,
-        #     images_phys = self.images_phys,
-        #     eps = nufft_eps,
-        #     precision = precision,
-        #     device = device
-        # )
-        # self.images_fourier = self.images_fourier.reshape(self.n_images, self.polar_grid.n_shells, self.polar_grid.n_inplanes)
-        # self.images_fourier.to(self.images_phys.device)
+        imgs = self.images_phys
+        phys_grid = self.phys_grid
+        n_images = self.n_images
+        n_x, n_y = phys_grid.n_pixels, phys_grid.n_pixels
+        n_xy = n_x * n_y
+        n_modes = (n_x, n_y)
+        rescale_factor: float = 2.0 / np.sqrt(n_xy) * (2 * np.pi)
+        imgs = imgs.to(dtype=torch_complex_type)
+        x1 = polar_grid.x_points.to(dtype=torch_float_type, device=compute_device)
+        x2 = polar_grid.y_points.to(dtype=torch_float_type, device=compute_device)
+        k1 = x1 * (2.0 * np.pi) * 2.0 / n_x
+        k2 = x2 * (2.0 * np.pi) * 2.0 / n_y
+        k1 = k1.flatten()
+        k2 = k2.flatten()
+        if compute_device.type == 'cuda':
+            raise NotImplementedError("CUFINUFFT implementation is currently disabled.")
+        #     image_polar = torch.zeros((n_images, polar_grid.n_points), dtype = torch_complex_type, device = storage_device)
+        #     if n_images == 1:
+        #         from cufinufft import nufft2d2
+        #         image_phys_gpu = images_phys[0,:,:].to(device)
+        #         image_polar_gpu = image_polar.flatten().to(device)
+        #         nufft2d2(
+        #             k1, k2, image_phys_gpu,
+        #             out = image_polar_gpu,
+        #             eps = eps,
+        #             isign = -1
+        #         )
+        #         assert isinstance(image_polar_gpu, torch.Tensor)
+        #         image_polar_gpu *= rescale_factor
+        #         image_polar = image_polar_gpu.detach().cpu()
+        #     else:
+        #         from cufinufft import Plan
+        #         plan = Plan(
+        #             nufft_type = 2,
+        #             n_modes = n_modes,
+        #             n_trans = 1,
+        #             dtype = "complex64" if precision == Precision.SINGLE else "complex128",
+        #             eps = eps,
+        #             isign = -1
+        #         )
+        #         plan.setpts(k1, k2)
+        #         image_polar_gpu = torch.zeros(polar_grid.n_points, dtype = torch_complex_type, device = device)
+        #         for i_image in range(n_images):
+        #             plan.execute(images_phys[i_image,:,:].to(device), image_polar_gpu)
+        #             assert isinstance(image_polar_gpu, torch.Tensor)
+        #             image_polar_gpu *= rescale_factor
+        #             image_polar[i_image,:] = image_polar_gpu.detach().cpu()
+        #     return image_polar
+        else:
+            from finufft import nufft2d2 as nufft2d2_cpu
+            numpy_float_type = np.float64
+            numpy_complex_type = np.complex128
+            imgs = imgs.cpu().numpy().astype(numpy_complex_type)
+            k1 = k1.cpu().numpy().astype(numpy_float_type)
+            k2 = k2.cpu().numpy().astype(numpy_float_type)
+            if n_images == 1:
+                image_polar = nufft2d2_cpu(k1, k2, imgs, eps = eps, isign = -1)
+            else:
+                image_polar = np.zeros((n_images, polar_grid.n_points), dtype = imgs.dtype)
+                for i in range(n_images):
+                    image_polar[i,:] = nufft2d2_cpu(k1, k2, imgs[i], eps = eps, isign = -1)
+            image_polar *= rescale_factor
+            image_polar = torch.tensor(
+                image_polar, dtype = torch_complex_type, device = storage_device
+            ).reshape(n_images, polar_grid.n_shells, polar_grid.n_inplanes)
+        fourier_images = FourierImages(
+            polar_grid = polar_grid,
+            box_size = phys_grid.box_size,
+            images_fourier = image_polar
+        ).to(dtype=torch_complex_type, device=storage_device)
+        return fourier_images
+    
+
 
 
 @dataclass
@@ -229,7 +284,7 @@ class FourierImages:
 
     polar_grid: UniformPolarGrid
     box_size: float
-    images_fourier: Tensor
+    images_fourier: torch.Tensor
 
     @property
     def n_images(self) -> int:
@@ -254,67 +309,92 @@ class FourierImages:
         self.images_fourier = self.images_fourier.to(dtype=dtype, device=device)
         return self
 
-    
+    def transform_to_spatial(
+        self,
+        phys_grid: SquaredCartesianGrid2D,
+        precision: Optional[PrecisionLevel] = None,
+        compute_device: Optional[str | torch.device] = None,
+        storage_device: str | torch.device = 'cpu',
+        eps: Optional[float] = None,
+    ) -> PhysicalImages:
+        """Transform the Fourier-space images in this collection to a Cartesian-space representation.
+        Existing Fourier-space images are kept. The new images will be placed on the same device as the
+        Fourier-space images.
 
+        Args:
+            grid (Optional[Cartesian_grid_descriptor], optional): Cartesian grid describing the new physical
+                images. Defaults to None. If None is passed, the collection's existing grid will be used.
+                If None is passed and no existing grid exists, this operation will fail.
+            nufft_eps (float, optional): Tolerance for the non-uniform FFT. Defaults to 1e-12.
+            precision (Precision, optional): Whether to use 32- or 64-bit representation.
+                Defaults to Precision.DEFAULT (which matches the current Fourier precision).
+            use_cuda (bool, optional): Whether to use a cuda device. Defaults to True.
 
-    # def transform_to_spatial(
-    #     self,
-    #     grid: CartesianGrid2D | Cartesian_grid_2d_descriptor | None = None,
-    #     nufft_eps: float = 1e-12,
-    #     precision: Precision = Precision.DEFAULT,
-    #     max_to_transform: int = -1,
-    #     device: str | device | None = None
-    # ) -> torch.Tensor:
-    #     """Transform the Fourier-space images in this collection to a Cartesian-space representation.
-    #     Existing Fourier-space images are kept. The new images will be placed on the same device as the
-    #     Fourier-space images.
-
-    #     Args:
-    #         grid (Optional[Cartesian_grid_descriptor], optional): Cartesian grid describing the new physical
-    #             images. Defaults to None. If None is passed, the collection's existing grid will be used.
-    #             If None is passed and no existing grid exists, this operation will fail.
-    #         nufft_eps (float, optional): Tolerance for the non-uniform FFT. Defaults to 1e-12.
-    #         precision (Precision, optional): Whether to use 32- or 64-bit representation.
-    #             Defaults to Precision.DEFAULT (which matches the current Fourier precision).
-    #         use_cuda (bool, optional): Whether to use a cuda device. Defaults to True.
-
-    #     Raises:
-    #         ValueError: If no existing Cartesian grid was set, and no new one was passed.
-    #     """
-    #     self._ensure_fourier_images()
-    #     if grid is None and getattr(self, "phys_grid", None) is None:
-    #         raise ValueError('No physical grid found, and physical grid parameters were not provided.')
-    #     if grid is not None:
-    #         self.phys_grid = CartesianGrid2D.from_descriptor(grid)
-    #     persist_transformed = False
-    #     if max_to_transform <= 0:
-    #         if max_to_transform == -1:
-    #             persist_transformed = True
-    #         max_to_transform = self.n_images
-    #     if not persist_transformed:
-    #         print(f"Transforming only the first {max_to_transform} images, probably for testing or plotting. Transformed images will be returned but not persisted.")
-
-    #     device = self.images_fourier.device if device is None else device
-    #     _device = get_device(device)
-    #     images_fourier = self.images_fourier[:max_to_transform]
-    #     images_fourier = images_fourier.reshape(images_fourier.shape[0], -1)
-    #     if precision == Precision.DEFAULT:
-    #         precision = Precision.SINGLE if images_fourier.dtype == torch.complex64 else Precision.DOUBLE
-    #     else:
-    #         if (precision == Precision.SINGLE and images_fourier.dtype != torch.complex64) or \
-    #            (precision == Precision.DOUBLE and images_fourier.dtype != torch.complex128):
-    #             print("Precision %s provided, overriding the existing precision." % precision.value)
-    #     images_phys = fourier_polar_to_cartesian_phys(
-    #         grid_fourier_polar = self.polar_grid,
-    #         grid_cartesian_phys = self.phys_grid,
-    #         image_polar = images_fourier,
-    #         eps = nufft_eps,
-    #         precision = precision,
-    #         device = _device
-    #     ).real
-    #     if persist_transformed:
-    #         self.images_phys = images_phys.to(device)
-    #     return images_phys
+        Raises:
+            ValueError: If no existing Cartesian grid was set, and no new one was passed.
+        """
+        compute_device = get_device(compute_device)
+        storage_device = get_device(storage_device)
+        check_nufft_installed(compute_device)
+        precision = precision if precision is not None else get_precision()
+        torch_float_type = get_float_dtype(precision)
+        torch_complex_type = get_complex_dtype(precision)
+        eps = get_epsilon(precision, eps)
+        
+        imgs = self.images_fourier
+        n_images = self.n_images
+        n_x, n_y = phys_grid.n_pixels, phys_grid.n_pixels
+        x1 = self.polar_grid.x_points.to(dtype=torch_float_type, device=compute_device)
+        x2 = self.polar_grid.y_points.to(dtype=torch_float_type, device=compute_device)
+        k1 = x1 * (2.0 * np.pi) * 2.0 / n_x
+        k2 = x2 * (2.0 * np.pi) * 2.0 / n_y
+        k1 = k1.flatten()
+        k2 = k2.flatten()
+        n_xy = phys_grid.n_pixels_total
+        n_modes = (n_x, n_y)
+        rescale_factor = 2.0 / np.sqrt(n_xy) * (2 * np.pi)
+        images_phys = None
+        if compute_device.type == 'cuda':
+            raise NotImplementedError("CUFINUFFT implementation is currently disabled.")
+            # weight_points = torch.tensor(polar_grid.weight_points, dtype=torch_float_type, device=device)
+            # from cufinufft import nufft2d1, Plan
+            # image_polar = image_polar.reshape(n_images, -1)
+            # image_phys = torch.zeros((n_images, n_x, n_y), dtype=torch_complex_type, device=storage_device)
+            # plan = Plan(
+            #     nufft_type = 1,
+            #     n_modes = n_modes,
+            #     n_trans = 1,
+            #     dtype = "complex64" if precision == Precision.SINGLE else "complex128",
+            #     eps = eps, isign=1
+            # )
+            # plan.setpts(k1, k2)
+            # image_phys_gpu = torch.zeros((n_x, n_y), dtype=torch_complex_type, device=_device)
+            # for i_image in range(n_images):
+            #     image_polar_gpu = image_polar[i_image].to(_device) * weight_points
+            #     plan.execute(image_polar_gpu, image_phys_gpu)
+            #     image_phys_gpu *= rescale_factor
+            #     image_phys[i_image,:,:] = image_phys_gpu.detach().cpu()
+            # return image_phys
+        else:
+            from finufft import nufft2d1 as nufft2d1_cpu
+            numpy_float_type = np.float64
+            numpy_complex_type = np.complex128
+            imgs = imgs.cpu()
+            k1 = k1.cpu().numpy().astype(numpy_float_type)
+            k2 = k2.cpu().numpy().astype(numpy_float_type)
+            images_phys = None
+            n_images = imgs.shape[0]
+            image_polar_weighted = (imgs * self.polar_grid.weight_points[None,:,:]).reshape(n_images, -1).numpy().astype(numpy_complex_type)
+            images_phys = np.zeros((n_images, n_x, n_y), dtype = np.float64)
+            for i in range(n_images):
+                images_phys[i] = nufft2d1_cpu(k1, k2, image_polar_weighted[i], n_modes = n_modes, eps = eps, isign = 1)
+            images_phys *= rescale_factor
+            images_phys = torch.tensor(images_phys, dtype = torch_complex_type, device = storage_device)
+        phys_images = PhysicalImages(
+            images_phys = images_phys,
+            phys_grid = phys_grid
+        )
+        return phys_images
 
     
     # def center_physical_image_signal(self, norm_type: NormType = NormType.MAX):
@@ -392,31 +472,8 @@ class FourierImages:
     #     return self.images_phys, sigma_noise.flatten().cpu().numpy()
 
 
-    # def add_noise_fourier(self, snr: float | FloatArrayType | torch.Tensor = 1.0):
-    #     """Add random ((0,1) complex normal) noise to Fourier-space images in the collection.
 
-    #     Args:
-    #         snr (float | FloatArrayType | torch.Tensor, optional): Signal-to-noise ratio. Defaults to 1.0.
 
-    #     Raises:
-    #         ValueError: If Fourier-space images do not exist.
-
-    #     Returns:
-    #         Tuple[torch.Tensor, torch.Tensor]: The updated images (as also updated in-place), and the
-    #             noise applied to them. 
-    #     """
-    #     ensure_positive(snr, "signal-to-noise ratio")
-    #     if self.images_fourier.shape[0] == 0:
-    #         raise ValueError("Attempting to add fourier noise, but fourier images are not set.")
-    #     device = self.images_fourier.device
-    #     if isinstance(snr, np.ndarray):
-    #         snr = torch.tensor(snr).to(device)
-    #     power_image = self.polar_grid.integrate(self.images_fourier.abs().pow(2))
-    #     power_image = power_image.unsqueeze(1).unsqueeze(2)
-    #     sigma_noise = torch.sqrt(power_image / snr).unsqueeze(1).unsqueeze(2)
-    #     noise = torch.randn_like(self.images_fourier) * sigma_noise
-    #     self.images_fourier = self.images_fourier + noise
-    #     return self.images_fourier, sigma_noise.flatten().cpu().numpy()
 
 
     # def set_displacement_grid(
