@@ -16,8 +16,11 @@ class SquaredCartesianGrid2D:
     y_pixels: torch.Tensor = field(init=False, repr=False)
     n_pixels_total: int = field(init=False, repr=False)
     
-    def __post_init__(self):
-        """Initialize computed fields after dataclass initialization."""
+    def __init__(self, n_pixels: int, box_size: float, endpoint: bool = False):
+        
+        self.n_pixels = n_pixels
+        self.box_size = box_size
+        self.endpoint = endpoint
         ensure_positive(self.n_pixels, "n_pixels")
         ensure_positive(self.box_size, "box_size")
         self.n_pixels_total = self.n_pixels * self.n_pixels
