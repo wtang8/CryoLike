@@ -1,23 +1,21 @@
-from dataclasses import dataclass, field
 import torch
 import numpy as np
 from cryolike.util.typechecks import ensure_positive
 from cryolike.util.precision import get_float_dtype
 
-@dataclass
 class SquaredCartesianGrid2D:
     n_pixels: int
     box_size: float
-    endpoint: bool = False
-    pixel_size: float = field(init=False)
-    x_axis: torch.Tensor = field(init=False, repr=False)
-    y_axis: torch.Tensor = field(init=False, repr=False)
-    x_pixels: torch.Tensor = field(init=False, repr=False)
-    y_pixels: torch.Tensor = field(init=False, repr=False)
-    n_pixels_total: int = field(init=False, repr=False)
+    endpoint: bool
+    pixel_size: float
+    x_axis: torch.Tensor
+    y_axis: torch.Tensor
+    x_pixels: torch.Tensor
+    y_pixels: torch.Tensor
+    n_pixels_total: int
     
     def __init__(self, n_pixels: int, box_size: float, endpoint: bool = False):
-        
+
         self.n_pixels = n_pixels
         self.box_size = box_size
         self.endpoint = endpoint

@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from scipy.special import roots_jacobi
-from dataclasses import dataclass, field
 from enum import Enum
 
 from cryolike.util.typechecks import ensure_positive
