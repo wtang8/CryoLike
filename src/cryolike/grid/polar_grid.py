@@ -29,8 +29,8 @@ class UniformPolarGrid:
         theta_shell (torch.Tensor): Angles within a shell, shape (n_inplanes,)
         weight_shells (torch.Tensor): Quadrature weights per shell, shape (n_shells,)
         weight_points (torch.Tensor): Quadrature weights per point, shape (n_shells, n_inplanes)
-        x_points (torch.Tensor): X-coordinates of each point
-        y_points (torch.Tensor): Y-coordinates of each point
+        x_points (torch.Tensor): X-coordinates of each point, shape (n_shells, n_inplanes)
+        y_points (torch.Tensor): Y-coordinates of each point, shape (n_shells, n_inplanes)
     """
     
     radius_max: float
