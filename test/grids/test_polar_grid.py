@@ -144,6 +144,8 @@ class TestUniformPolarGrid:
         # Move back to float64 (initial dtype)
         grid_f64 = grid.to(dtype=torch.float64, device='cpu')
         assert grid_f64.radius_shells.dtype == torch.float64
+    
+        ## TODO: test device GPU
 
     def test_invalid_quadrature_type(self):
         with raises(ValueError, match="Unknown quadrature type"):
