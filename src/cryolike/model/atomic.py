@@ -27,9 +27,10 @@ class AtomicModel:
             reside.
     """
     coordinates: torch.Tensor
-    radii: torch.Tensor
+    atom_radii: torch.Tensor
     box_size: float
     file_name: Optional[list[str]] = None
+    use_protein_residue_model: bool = False
 
     @property
     def n_frames(self) -> int:
@@ -44,14 +45,19 @@ class AtomicModel:
         if self.coordinates.ndim != 3:
             raise ValueError(f"atomic_coordinates.ndim is expected to be 3, but got {self.coordinates.ndim}")
         ensure_positive(self.box_size, "box size")
-        ensure_positive(self.radii, "atomic radii")
-        if self.radii.shape != (self.n_atoms,):
-            raise ValueError(f"size of radii must match n_atoms in coordinates")
+        ensure_positive(self.atom_radii, "atomic atom_radii")
+        if self.atom_radii.shape != (self.n_atoms,):
+            raise ValueError(f"size of atom_radii must match n_atoms in coordinates")
         if self.coordinates.shape != (self.n_frames, self.n_atoms, 3):
             raise ValueError(f"atomic_coordinates.shape is expected to be ({self.n_frames}, {self.n_atoms}, 3), but got {self.coordinates.shape}")
     
-    def center_coordinates(self):
+    def center_coordinates(self) -> None:
         self.coordinates -= torch.mean(self.coordinates, dim = 1, keepdim = True)
+
+    def to(self, dtype: torch.dtype, device: torch.device) -> 'AtomicModel':
+        self.coordinates = self.coordinates.to(dtype=dtype, device=device)
+        self.atom_radii = self.atom_radii.to(dtype=dtype, device=device)
+        return self
 
     @classmethod
     def read_traj(
@@ -59,6 +65,7 @@ class AtomicModel:
         box_size: float,
         top_file: str,
         trj_file: Optional[str] = None,
+        use_protein_residue_model: bool = False,
         atom_radii: Optional[torch.Tensor | float] = None,
         atom_selection: Optional[str] = None,
     ) -> 'AtomicModel':
@@ -68,22 +75,21 @@ class AtomicModel:
             pdb_file (str): Path to the PDB file to load
             box_size (float | None, optional): Size of the viewing box. If None (the default),
                 a default box size defined in the AtomicModel constructor will be used.
-            atom_radii (torch.Tensor | float, optional): Radii of the atoms, either
+            atom_radii (torch.Tensor | float, optional): atom_radii of the atoms, either
                 as a per-atom array of values or a single value for all atoms. Defaults to 0.1.
             atom_selection (str, optional): Which atoms to choose from the model.
                 If using a protein residue model, will be set automatically. Otherwise,
                 it should be a valid index of the PDB file's Topology. Defaults to None.
             
         Use protein residue model if atom_radii is None and atom_selection is None, 
-            will use the 'name CA' atom selection and read atomic radii from known amino acid sizes.
+            will use the 'name CA' atom selection and read atomic atom_radii from known amino acid sizes.
 
         Returns:
             AtomicModel: Instantiated atomic model from the PDB file.
         """
         ensure_positive(box_size, "box size")
-        use_protein_residue_model = atom_radii is None and atom_selection is None
-        if (atom_radii is None) ^ (atom_selection is None):
-            raise ValueError(f"atomic_radii is {atom_radii}, but atom_selection is {atom_selection}. Either both should be None or both should be set.")
+        if not use_protein_residue_model and (atom_radii is None or atom_selection is None):
+                raise ValueError(f"atomic_radii is {atom_radii}, but atom_selection is {atom_selection}. Both should be set if not using protein residue model.")
         if trj_file is None:
             u: Trajectory = load(top_file)
         else:
@@ -108,10 +114,13 @@ class AtomicModel:
         indices = u.topology.select(atom_selection)
         if len(indices) == 0:
             raise ValueError("No atoms selected.")
-        if atom_radii.ndim == 0:
+        if atom_radii.numel() == 1:
             atom_radii = atom_radii.expand(len(indices))
+        if atom_radii.shape != (len(indices),):
+            raise ValueError("size of atom_radii must match number of selected atoms")
         pos = pos[:,indices,:]
-        instance = cls(coordinates=pos, radii=atom_radii, box_size=box_size)
+        instance = cls(coordinates=pos, atom_radii=atom_radii, box_size=box_size)
         instance.file_name = [top_file] if trj_file is None else [top_file, trj_file]
+        instance.use_protein_residue_model = use_protein_residue_model
         return instance
     

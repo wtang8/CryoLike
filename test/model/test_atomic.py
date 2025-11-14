@@ -26,7 +26,7 @@ class TestAtomicModel(unittest.TestCase):
         # Mock Coordinates (2 frames, 10 atoms, in nm)
         mock_xyz = np.random.rand(2, N_TOTAL_ATOMS, 3).astype(np.float32)
         
-        # Define the residue sequence names and the expected radii
+        # Define the residue sequence names and the expected atom_radii
         RESIDUE_NAMES = ["CYS", "PHE", "ALA"]
         expected_radii = torch.tensor([
             _ATOMIC_RADIUS_RESNAME["CYS"], 
@@ -59,6 +59,7 @@ class TestAtomicModel(unittest.TestCase):
             box_size=BOX_SIZE,
             top_file=TOP_FILE,
             trj_file=TRJ_FILE,
+            use_protein_residue_model=True,
         )
         
         # --- Assertions ---
@@ -79,8 +80,8 @@ class TestAtomicModel(unittest.TestCase):
         expected_coordinates = torch.tensor(mock_xyz[:, CA_INDICES, :] * 10.0, dtype=torch.float32)
         self.assertTrue(torch.equal(model.coordinates, expected_coordinates))
         
-        # 5. Radii check (lookup logic)
-        self.assertTrue(torch.equal(model.radii, expected_radii))
+        # 5. atom_radii check (lookup logic)
+        self.assertTrue(torch.equal(model.atom_radii, expected_radii))
 
     @patch('cryolike.model.atomic.load')
     def test_read_traj_explicit_single_file_and_float_radius(self, mock_load):
@@ -129,9 +130,9 @@ class TestAtomicModel(unittest.TestCase):
         self.assertEqual(model.n_atoms, SELECTED_COUNT) 
         self.assertEqual(model.file_name, [TOP_FILE])
 
-        # 4. Radii check (float conversion to tensor)
+        # 4. atom_radii check (float conversion to tensor)
         expected_radii = torch.full((SELECTED_COUNT,), EXPLICIT_RADIUS, dtype=torch.float32)
-        self.assertTrue(torch.equal(model.radii, expected_radii))
+        self.assertTrue(torch.equal(model.atom_radii, expected_radii))
 
         # 5. Coordinates check (should handle 2D to 3D expansion implicitly)
         expected_coordinates = torch.tensor(mock_xyz[SELECTED_INDICES, :] * 10.0, dtype=torch.float32).unsqueeze(0)
@@ -173,7 +174,7 @@ class TestAtomicModel(unittest.TestCase):
         # --- Assertions ---
         self.assertEqual(model.n_frames, 2)
         self.assertEqual(model.n_atoms, SELECTED_COUNT) 
-        self.assertTrue(torch.equal(model.radii, EXPLICIT_RADII))
+        self.assertTrue(torch.equal(model.atom_radii, EXPLICIT_RADII))
 
     def test_read_traj_error_mismatched_inputs(self):
         """Tests error when only one of atom_radii or atom_selection is provided."""
@@ -181,20 +182,22 @@ class TestAtomicModel(unittest.TestCase):
         BOX_SIZE = 10.0
         TOP_FILE = "mock.pdb"
 
-        # Case 1: radii set, selection is None
-        with self.assertRaisesRegex(ValueError, "Either both should be None or both should be set."):
+        # Case 1: atom_radii set, selection is None, and not using protein model
+        with self.assertRaisesRegex(ValueError, "Both should be set if not using protein residue model."):
             AtomicModel.read_traj(
                 box_size=BOX_SIZE,
                 top_file=TOP_FILE,
+                use_protein_residue_model=False,
                 atom_radii=0.5,
                 atom_selection=None,
             )
         
-        # Case 2: radii is None, selection set
-        with self.assertRaisesRegex(ValueError, "Either both should be None or both should be set."):
+        # Case 2: atom_radii is None, selection set, and not using protein model
+        with self.assertRaisesRegex(ValueError, "Both should be set if not using protein residue model."):
             AtomicModel.read_traj(
                 box_size=BOX_SIZE,
                 top_file=TOP_FILE,
+                use_protein_residue_model=False,
                 atom_radii=None,
                 atom_selection="all",
             )
@@ -222,6 +225,28 @@ class TestAtomicModel(unittest.TestCase):
                 atom_selection="nothing",
             )
 
+    @patch('cryolike.model.atomic.load')
+    def test_read_traj_error_atom_radii_shape_error(self, mock_load):
+        """Tests error when atom atom_radii tensor does not match number of selected atoms."""
+
+        mock_topology = MagicMock(spec=Topology)
+        mock_topology.select.return_value = np.array([0, 1, 2])
+        mock_trajectory = MagicMock(xyz=np.random.rand(1, 3, 3).astype(np.float32), topology=mock_topology)
+        mock_load.return_value = mock_trajectory
+
+        BOX_SIZE = 10.0
+        TOP_FILE = "mock.pdb"
+        
+        # --- Call Function ---
+        with self.assertRaisesRegex(ValueError, "size of atom_radii must match number of selected atoms"):
+            AtomicModel.read_traj(
+                box_size=BOX_SIZE,
+                top_file=TOP_FILE,
+                atom_radii=torch.rand(4),
+                atom_selection="all",
+            )
+
+
 class TestAtomicModelPostInit(unittest.TestCase):
     """Tests for the AtomicModel constructor and post-init validation."""
 
@@ -230,7 +255,7 @@ class TestAtomicModelPostInit(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "atomic_coordinates.ndim is expected to be 3, but got 2"):
             AtomicModel(
                 coordinates=torch.rand(5, 3), # 2D tensor
-                radii=torch.rand(5),
+                atom_radii=torch.rand(5),
                 box_size=10.0
             )
 
@@ -239,16 +264,16 @@ class TestAtomicModelPostInit(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"atomic_coordinates.shape is expected to be \(1, 5, 3\), but got torch.Size\(\[1, 5, 4\]\)"):
             AtomicModel(
                 coordinates=torch.rand(1, 5, 4), # Last dimension is 4
-                radii=torch.rand(5),
+                atom_radii=torch.rand(5),
                 box_size=10.0
             )
 
-    def test_atomiic_radii_shape_error(self):
-        """Tests ValueError if radii tensor does not match n_atoms."""
-        with self.assertRaisesRegex(ValueError, "size of radii must match n_atoms in coordinates"):
+    def test_atom_radii_shape_error(self):
+        """Tests ValueError if atom_radii tensor does not match n_atoms."""
+        with self.assertRaisesRegex(ValueError, "size of atom_radii must match n_atoms in coordinates"):
             AtomicModel(
                 coordinates=torch.rand(1, 5, 3),
-                radii=torch.rand(4),
+                atom_radii=torch.rand(4),
                 box_size=10.0
             )
 
@@ -258,7 +283,7 @@ class TestAtomicModelPostInit(unittest.TestCase):
         coords = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]], dtype=torch.float32)
         model = AtomicModel(
             coordinates=coords,
-            radii=torch.rand(2),
+            atom_radii=torch.rand(2),
             box_size=100.0
         )
         
