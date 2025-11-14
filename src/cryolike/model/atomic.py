@@ -54,7 +54,7 @@ class AtomicModel:
     def center_coordinates(self) -> None:
         self.coordinates -= torch.mean(self.coordinates, dim = 1, keepdim = True)
 
-    def to(self, dtype: torch.dtype, device: torch.device) -> 'AtomicModel':
+    def to(self, dtype: torch.dtype, device: str | torch.device) -> 'AtomicModel':
         self.coordinates = self.coordinates.to(dtype=dtype, device=device)
         self.atom_radii = self.atom_radii.to(dtype=dtype, device=device)
         return self

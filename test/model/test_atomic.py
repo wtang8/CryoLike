@@ -292,3 +292,26 @@ class TestAtomicModelPostInit(unittest.TestCase):
         # Check that the mean of coordinates along the atom dimension is close to zero
         mean_coords = torch.mean(model.coordinates, dim=1)
         self.assertTrue(torch.allclose(mean_coords, torch.zeros_like(mean_coords), atol=1e-6))
+
+
+    def test_to_method(self):
+        """Tests the to method."""
+        coords = torch.arange(6, dtype=torch.float32).reshape(1, 2, 3)
+        atom_radii = torch.tensor([1.0, 2.0], dtype=torch.float32)
+        model_f32 = AtomicModel(
+            coordinates=coords,
+            atom_radii=atom_radii,
+            box_size=100.0
+        )
+
+        # Move to float64
+        model_f64 = model_f32.to(dtype=torch.float64, device='cpu')
+        assert model_f64.coordinates.dtype == torch.float64
+        assert model_f64.atom_radii.dtype == torch.float64
+
+        # Move to float32
+        model_f32 = model_f64.to(dtype=torch.float32, device='cpu')
+        assert model_f32.coordinates.dtype == torch.float32
+        assert model_f32.atom_radii.dtype == torch.float32
+
+        ## TODO: test device GPU
