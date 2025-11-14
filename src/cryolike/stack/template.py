@@ -17,7 +17,7 @@ from cryolike.util import PrecisionLevel, get_device, get_float_dtype, get_compl
 class AtomShape(Enum):
     GAUSSIAN = "gaussian"
     HARD_SPHERE = "hard_sphere"
-    DEFAULT = GAUSSIAN
+    DEFAULT = "default"
 
 
 def _fourier_circles(
@@ -49,8 +49,8 @@ def _fourier_circles(
     return xyz_template_points
 
 
-def _get_offset(polar_grid: UniformPolarGrid) -> torch.Tensor:
-    return torch.sinc(2.0 * polar_grid.x_points) * torch.sinc(2.0 * polar_grid.y_points)
+# def _get_offset(polar_grid: UniformPolarGrid) -> torch.Tensor:
+#     return torch.sinc(2.0 * polar_grid.x_points) * torch.sinc(2.0 * polar_grid.y_points)
 
 
 def make_uniform_hard_sphere(
@@ -151,14 +151,14 @@ class Templates(FourierImages):
         if atomic_model.use_protein_residue_model:
             atom_shape = AtomShape.HARD_SPHERE
             print("Using protein residue model, using hard sphere.")
-        if atom_shape == AtomShape.DEFAULT:
+        if atom_shape is AtomShape.DEFAULT:
             atom_shape = AtomShape.HARD_SPHERE
             print("Atom shape not specified, using hard sphere.")
         float_type = get_float_dtype(precision)
         atomic_model = atomic_model.to(dtype=float_type, device=compute_device)
         viewing_angles = viewing_angles.to(dtype=float_type, device=compute_device)
         polar_grid = polar_grid.to(dtype=float_type, device=compute_device)
-        
+
         if atom_shape == AtomShape.GAUSSIAN:
             templates_fourier = make_uniform_gaussian(
                 atomic_model=atomic_model,

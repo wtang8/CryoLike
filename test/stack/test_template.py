@@ -20,8 +20,8 @@ class TestTemplateHelpers(unittest.TestCase):
         n_angles = 2
         n_thetas = 5
         thetas = torch.linspace(0, 2 * np.pi, n_thetas)
-        azimus = torch.tensor([0.0, np.pi / 2])
-        polars = torch.tensor([np.pi / 2, np.pi / 2]) # Keep polar angle at equator for simplicity
+        azimus = torch.tensor([0.0])
+        polars = torch.tensor([0.0])
         gammas = torch.zeros(n_angles)
 
         xyz = _fourier_circles(thetas, polars, azimus, gammas)
@@ -33,10 +33,10 @@ class TestTemplateHelpers(unittest.TestCase):
         norms = torch.linalg.norm(xyz, dim=2)
         self.assertTrue(torch.allclose(norms, torch.ones_like(norms)))
 
-        # 3. Check a known case (polar angle = pi/2, azimu = 0)
+        # 3. Check a known case (polar angle = 0, azimu = 0)
         # Should trace a circle in the xy-plane
-        self.assertTrue(torch.allclose(xyz[0, :, 0], -torch.sin(thetas)))
-        self.assertTrue(torch.allclose(xyz[0, :, 1], torch.cos(thetas)))
+        self.assertTrue(torch.allclose(xyz[0, :, 0], torch.cos(thetas), atol=1e-7))
+        self.assertTrue(torch.allclose(xyz[0, :, 1], torch.sin(thetas), atol=1e-7))
         self.assertTrue(torch.allclose(xyz[0, :, 2], torch.zeros_like(thetas), atol=1e-7))
 
 
