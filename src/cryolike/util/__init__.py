@@ -19,3 +19,7 @@ from .nufft_checks import (
     check_nufft_installed,
     get_epsilon
 )
+from .math import (
+    absq,
+    complex_mul_real
+)

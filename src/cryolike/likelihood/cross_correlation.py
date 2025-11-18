@@ -3,7 +3,7 @@ from typing import Optional
 
 from cryolike.grid import UniformPolarGrid
 from cryolike.pose import Displacements2D
-from cryolike.util import PrecisionLevel, get_float_dtype, get_complex_dtype
+from cryolike.util import PrecisionLevel, get_float_dtype, get_complex_dtype, absq, complex_mul_real
 
 def calc_cross_correlation(
     ctf_images_bessel_conj: torch.Tensor,
@@ -60,18 +60,18 @@ def cross_correlation_images_templates(
     assert ctf_tensor.dtype in [float_type, complex_type]
 
     polar_grid = polar_grid.to(dtype=float_type, device=device)
-    weights = polar_grid.weight_shells
+    weights = polar_grid.weight_shells / polar_grid.n_inplanes
     displacement_kernels = displacements.kernel(polar_grid)
 
     ctf_templates_fourier = ctf_tensor.unsqueeze(1) * templates_fourier
     templates_norm = torch.sqrt(torch.sum(
-        ctf_templates_fourier.conj() * ctf_templates_fourier * weights[None,None,:,None],
+        absq(ctf_templates_fourier) * weights[None,None,:,None],
         dim=(-2, -1)
-    ).real)
+    ))
     images_norm = torch.sqrt(torch.sum(
-        images_fourier.conj() * images_fourier * weights[None,:,None],
+        absq(images_fourier) * weights[None,:,None],
         dim=(-2, -1)
-    ).real)
+    ))
 
     displaced_templates_fourier = templates_fourier.unsqueeze(1) * displacement_kernels.unsqueeze(0)
     displaced_templates_bessel = torch.fft.fft(displaced_templates_fourier, dim=-1, norm="ortho")
