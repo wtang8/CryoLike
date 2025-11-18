@@ -45,6 +45,12 @@ class Displacements2D:
     @classmethod
     def sample_grid(cls, max_displacements_angstrom: float, n_samples_per_axis: int, box_size_angstrom: float):
         from cryolike.grid import SquaredCartesianGrid2D
+        if n_samples_per_axis == 1:
+            return cls(
+                x_displacements_angstrom=torch.tensor([0.0]),
+                y_displacements_angstrom=torch.tensor([0.0]),
+                box_size_angstrom=box_size_angstrom
+            )
         grid = SquaredCartesianGrid2D(box_size=max_displacements_angstrom * 2.0, n_pixels=n_samples_per_axis, endpoint=True)
         instance = cls(
             x_displacements_angstrom=grid.x_pixels.flatten(),

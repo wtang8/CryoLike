@@ -167,6 +167,17 @@ class TestDisplacements2D(unittest.TestCase):
         self.assertTrue(torch.allclose(displacements.x_displacements_angstrom, x_disp_expected))
         self.assertTrue(torch.allclose(displacements.y_displacements_angstrom, y_disp_expected))
 
+    def test_sample_grid_n_sample_one(self):
+        """Test sample grid with n_samples_per_axis = 1."""
+        displacements = Displacements2D.sample_grid(
+            max_displacements_angstrom=10.0,
+            n_samples_per_axis=1,
+            box_size_angstrom=self.box_size_angstrom
+        )
+        self.assertEqual(displacements.box_size_angstrom, self.box_size_angstrom)
+        self.assertTrue(torch.allclose(displacements.x_displacements_angstrom, torch.zeros(1)))
+        self.assertTrue(torch.allclose(displacements.y_displacements_angstrom, torch.zeros(1)))
+
 
 if __name__ == '__main__':
     unittest.main()
