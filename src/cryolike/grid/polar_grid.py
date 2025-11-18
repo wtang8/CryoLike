@@ -172,13 +172,23 @@ class UniformPolarGrid:
         if f.shape[-2] != self.n_shells or f.shape[-1] != self.n_inplanes:
             raise ValueError(f"Input tensor shape {f.shape} does not match grid shape ({self.n_shells}, {self.n_inplanes})")
         return torch.sum(f * self.weight_points.view(*([1] * (f.ndim - 2)), self.n_shells, self.n_inplanes), dim=(-2, -1))
+    
+    @classmethod
+    def from_n_pixels(cls, n_pixels: int) -> 'UniformPolarGrid':
+        radius_max = n_pixels / 4.0
+        dist_radii = 1.0 / 4.0
+        n_inplanes = n_pixels * 2
+        return UniformPolarGrid(
+            radius_max = radius_max,
+            dist_radii = dist_radii,
+            n_inplanes = n_inplanes,
+        )
         
     def get_fourier_translation_kernel(
         self,
         x_displacements_angstrom: torch.Tensor,
         y_displacements_angstrom: torch.Tensor,
-        box_size_x: float = 2.0,
-        box_size_y: float = 2.0,
+        box_size: float = 2.0,
         device: str | torch.device = torch.device('cpu')
     ) -> torch.Tensor:
         """Get a Fourier-space translation kernel.
@@ -197,22 +207,13 @@ class UniformPolarGrid:
             torch.Tensor: Translation kernel of shape 
                 [n_displacements, n_shells, n_inplanes]
         """
-        device = get_device(device)
-        float_dtype = get_float_dtype()
-        
-        # Convert displacements from Angstrom to normalized coordinates [-1, 1]
-        x_disp = x_displacements_angstrom.to(dtype=float_dtype, device=device) * 2.0 / box_size_x
-        y_disp = y_displacements_angstrom.to(dtype=float_dtype, device=device) * 2.0 / box_size_y
-        
-        # Get grid points on target device
-        x_pts = self.x_points.to(dtype=float_dtype, device=device)
-        y_pts = self.y_points.to(dtype=float_dtype, device=device)
         
         # Compute phase shift: exp(-2πi * (k · displacement))
         kernel = torch.exp(
-            -2.0 * np.pi * 1j * (
-                x_pts[None, :, :] * x_disp[:, None, None] +
-                y_pts[None, :, :] * y_disp[:, None, None]
+            -2.0 * np.pi * 1j * 2.0 / box_size * (
+                self.x_points[None, :, :] * x_displacements_angstrom[:, None, None] +
+                self.y_points[None, :, :] * y_displacements_angstrom[:, None, None]
             )
         )
         return kernel
+    
