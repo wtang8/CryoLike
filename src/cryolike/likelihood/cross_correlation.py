@@ -5,27 +5,7 @@ from cryolike.grid import UniformPolarGrid
 from cryolike.pose import Displacements2D
 from cryolike.util import PrecisionLevel, get_float_dtype, get_complex_dtype
 
-# class CrossCorrelation:
-
-#     device: torch.device
-#     precision: PrecisionLevel
-#     float_type: torch.dtype
-#     complex_type: torch.dtype
-
-#     polar_grid: UniformPolarGrid
-#     weights: torch.Tensor
-#     weights_sqrt: torch.Tensor
-
-#     def __init__(self, polar_grid: UniformPolarGrid, precision: PrecisionLevel = PrecisionLevel.SINGLE, device: Optional[str | torch.device] = None):
-#         self.device = torch.device(device) if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#         self.precision = precision
-#         self.float_type = get_float_dtype(precision)
-#         self.complex_type = get_complex_dtype(precision)
-#         self.polar_grid = polar_grid.to(dtype=self.float_type, device=self.device)
-#         self.weights = polar_grid.weight_points
-#         self.weights_sqrt = torch.sqrt(self.weights)
-
-def _calc_cross_correlation(
+def calc_cross_correlation(
     ctf_images_bessel_conj: torch.Tensor,
     displaced_templates_bessel: torch.Tensor,
     weights: torch.Tensor,
@@ -83,12 +63,6 @@ def cross_correlation_images_templates(
     weights = polar_grid.weight_shells
     displacement_kernels = displacements.kernel(polar_grid)
 
-    # images_fourier_weights_sqrt = images_fourier * weights_sqrt.unsqueeze(0).unsqueeze(-1)
-    # templates_fourier_weights_sqrt = templates_fourier * weights_sqrt.unsqueeze(0).unsqueeze(-1)
-    # ctf_templates_fourier_weights_sqrt = ctf_tensor.unsqueeze(1) * templates_fourier_weights_sqrt.unsqueeze(0) # (n_ctf, n_templates)
-    # templates_norm = torch.linalg.norm(ctf_templates_fourier_weights_sqrt, ord=2, dim=(-2, -1))
-    # images_norm = torch.linalg.norm(images_fourier_weights_sqrt, ord=2, dim=(-2, -1))
-
     ctf_templates_fourier = ctf_tensor.unsqueeze(1) * templates_fourier
     templates_norm = torch.sqrt(torch.sum(
         ctf_templates_fourier.conj() * ctf_templates_fourier * weights[None,None,:,None],
@@ -104,7 +78,7 @@ def cross_correlation_images_templates(
     ctf_images_fourier = ctf_tensor * images_fourier
     ctf_images_bessel_conj = torch.fft.fft(ctf_images_fourier, dim=-1, norm="ortho").conj()
 
-    cross_correlation = _calc_cross_correlation(
+    cross_correlation = calc_cross_correlation(
         ctf_images_bessel_conj=ctf_images_bessel_conj,
         displaced_templates_bessel=displaced_templates_bessel,
         weights=weights,
@@ -113,8 +87,3 @@ def cross_correlation_images_templates(
     cross_correlation_fourier_normalized = cross_correlation / images_norm[:,None,None,None] / templates_norm[:,:,None,None]
     return cross_correlation_fourier_normalized
 
-
-    
-
-    # s_points = 4.0 * torch.sinc(2.0 * polar_grid.x_points) * torch.sinc(2.0 * polar_grid.y_points)
-    # Iss = torch.sum(s_points ** 2 * weights)
