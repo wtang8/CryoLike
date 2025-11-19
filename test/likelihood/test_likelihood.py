@@ -7,7 +7,7 @@ from numpy import pi
 from cryolike.grid import UniformPolarGrid
 from cryolike.pose import Displacements2D
 from cryolike.likelihood.likelihood import likelihood_all_poses, _identity_kernel
-from cryolike.util import get_device
+from cryolike.util import get_device, absq
 
 from cross_correlation_fixtures import (
     parameters,
@@ -50,7 +50,7 @@ def test_likelihood_PxxP_from_a_k_p(params: parameters):
     viewing_angles = make_viewing_angles(device, params.float_type)
     planar_ctf_template = get_planar_ctf(polar_grid, angle_planar_ctf_template).unsqueeze(0)
     planar_ctf_image = get_planar_ctf(polar_grid, angle_planar_ctf_image).unsqueeze(0)
-    templates_fourier = make_planewave_templates(wavevector_planewave, viewing_angles, polar_grid)
+    templates_fourier = make_planewave_templates(wavevector_planewave, viewing_angles, polar_grid)  
 
     displacements_image = Displacements2D(
         x_displacements_angstrom=displacement_planewave_image[0].unsqueeze(0),
@@ -59,6 +59,9 @@ def test_likelihood_PxxP_from_a_k_p(params: parameters):
     ).to(dtype=params.float_type, device=device)
     displacement_kernel_image = displacements_image.kernel(polar_grid)
     images_fourier = templates_fourier.clone() * displacement_kernel_image * planar_ctf_image
+
+    templates_fourier /= torch.sqrt(torch.sum(absq(templates_fourier) * polar_grid.weight_shells[None,:,None] / polar_grid.n_inplanes, dim=(-2, -1), keepdim=True))  
+    images_fourier /= torch.sqrt(torch.sum(absq(images_fourier) * polar_grid.weight_shells[None,:,None] / polar_grid.n_inplanes, dim=(-2, -1), keepdim=True))
     
     displacements_templates = Displacements2D.sample_grid(
         max_displacements_angstrom = params.max_displacement,

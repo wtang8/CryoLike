@@ -119,14 +119,14 @@ def make_cases() -> list[parameters]:
     # ) for x in cases]
     # cases.extend(with_double_precision)
 
-    # if torch.cuda.is_available():
-    #     with_cuda = [x.duplicate(device='cuda') for x in cases]
-    #     cases.extend(with_cuda)
+    if torch.cuda.is_available():
+        with_cuda = [x.duplicate(device='cuda') for x in cases]
+        cases.extend(with_cuda)
 
-    # low_pixel = [x.duplicate(n_pixels=64) for x in cases]
-    # high_pixel = [x.duplicate(n_pixels=256) for x in cases]
-    # cases.extend(low_pixel)
-    # cases.extend(high_pixel)
+    low_pixel = [x.duplicate(n_pixels=64) for x in cases]
+    high_pixel = [x.duplicate(n_pixels=256) for x in cases]
+    cases.extend(low_pixel)
+    cases.extend(high_pixel)
 
     return cases
 
