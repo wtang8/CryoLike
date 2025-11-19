@@ -63,7 +63,7 @@ def cross_correlation_images_templates(
     weights = polar_grid.weight_shells / polar_grid.n_inplanes
     displacement_kernels = displacements.kernel(polar_grid)
 
-    ctf_templates_fourier = ctf_tensor.unsqueeze(1) * templates_fourier
+    ctf_templates_fourier = ctf_tensor.unsqueeze(1) * templates_fourier.unsqueeze(0)
     templates_norm = torch.sqrt(torch.sum(
         absq(ctf_templates_fourier) * weights[None,None,:,None],
         dim=(-2, -1)
