@@ -86,21 +86,10 @@ def likelihood_all_poses(
     Isx = Isx[:,:,None,None]
     Isy = Isy[:,None,None,None]
 
-    print("Ixx: ", Ixx.amin(), Ixx.amax())
-    print("Iyy: ", Iyy.amin(), Iyy.amax())
-    print("Ixy: ", Ixy.amin(), Ixy.amax())
-    print("Isx.real: ", Isx.real.amin(), Isx.real.amax(), "Isx.imag: ", Isx.imag.amin(), Isx.imag.amax())
-    print("Isy.real: ", Isy.real.amin(), Isy.real.amax(), "Isy.imag: ", Isy.imag.amin(), Isy.imag.amax())
-    print("Iss: ", Iss.amin(), Iss.amax())
-
     A = - absq(Isx) + Ixx * Iss
     B = - complex_mul_real(Isx, Isy) + Ixy * Iss
     C =   absq(Isy) - Iyy * Iss
     D = - (B ** 2 / A + C)
-    print("A: ", A.amin(), A.amax())
-    print("B^2: ", (B**2).amin(), (B**2).amax())
-    print("C: ", C.amin(), C.amax())
-    print("D: ", D.amin(), D.amax())
     
     p = n_pixels_phys / 2.0 - 2.0
     constant = (3.0 - n_pixels_phys) / 2.0 * np.log(2 * np.pi) \
@@ -142,21 +131,14 @@ def likelihood_all_poses(
 #     Iss = torch.sum(absq(s_points) * weights)
 #     s_points = s_points.unsqueeze(0)
 
-#     Ixx = torch.sqrt(torch.sum(
-#         absq(templates_fourier) * weights,
-#         dim=(-2, -1)
-#     )) # |template|^2
-#     Iyy = torch.sqrt(torch.sum(
-#         absq(images_fourier) * weights,
-#         dim=(-2, -1)
-#     )) # |image|^2
+#     Ixx = torch.sum(absq(templates_fourier) * weights, dim=(-2, -1)) # |template|^2
+#     Iyy = torch.sum(absq(images_fourier) * weights, dim=(-2, -1)) # |image|^2
 #     templates_bessel = torch.fft.fft(templates_fourier, dim=-1, norm="ortho")
 #     images_bessel = torch.fft.fft(images_fourier, dim=-1, norm="ortho")
-#     Ixy = torch.sum((
-#         images_bessel.conj() * templates_bessel * weights
-#     ), dim=(-2, -1))
-#     Isx = torch.sum(s_points * templates_fourier * weights, dim=(-2, -1))
-#     Isy = torch.sum(s_points * images_fourier * weights, dim=(-2, -1))
+#     Ixy = torch.sum((images_bessel.conj() * templates_bessel * weights), dim=(-2, -1))
+#     s_points_weights = s_points * weights
+#     Isx = torch.sum(s_points_weights * templates_fourier, dim=(-2, -1))
+#     Isy = torch.sum(s_points_weights * images_fourier, dim=(-2, -1))
 #     A = - absq(Isx) + Ixx * Iss
 #     B = - complex_mul_real(Isx, Isy) + Ixy * Iss
 #     C =   absq(Isy) - Iyy * Iss
