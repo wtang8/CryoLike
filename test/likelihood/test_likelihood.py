@@ -69,17 +69,14 @@ def test_likelihood_PxxP_from_a_k_p(params: parameters):
     wavevector_planewave_templates = viewing_angles_to_cartesian_displacements(viewing_angles, wavevector_planewave).to(device)
     wavevector_planewave_images = wavevector_planewave_templates.clone() - displacement_planewave_image
     
-    _gamma = polar_grid.theta_shell * -1.0
-    displacements = displacements_templates.xy_displacements_angstrom
-    
     log_likelihood_class = LogLikelihoodPlanarCTFPlanewaves(
         wavevector_planewave_templates=wavevector_planewave_templates,
         wavevector_planewave_images=wavevector_planewave_images,
         wavevector_planewave_identity=wavevector_planewave_identity.unsqueeze(0),
         angle_planar_ctf_template=angle_planar_ctf_template,
         angle_planar_ctf_image=angle_planar_ctf_image,
-        gamma=_gamma,
-        displacements=displacements,
+        gamma=polar_grid.theta_shell * -1.0,
+        displacements=displacements_templates.xy_displacements_angstrom,
         polar_grid=polar_grid,
         n_pixels=n_pixels_total,
         precision=params.precision,

@@ -55,14 +55,14 @@ def likelihood_all_poses(
     Iss = torch.sum(absq(s_points) * weights[:,None])
 
     ctf_templates_fourier = ctf_tensor.unsqueeze(1) * templates_fourier.unsqueeze(0)
-    Ixx = torch.sqrt(torch.sum(
+    Ixx = torch.sum(
         absq(ctf_templates_fourier) * weights[None,None,:,None],
         dim=(-2, -1)
-    )) # |template|^2
-    Iyy = torch.sqrt(torch.sum(
+    )
+    Iyy = torch.sum(
         absq(images_fourier) * weights[None,:,None],
         dim=(-2, -1)
-    )) # |image|^2
+    )
 
     displaced_templates_fourier = templates_fourier.unsqueeze(1) * displacement_kernels.unsqueeze(0)
     displaced_templates_bessel = torch.fft.fft(displaced_templates_fourier, dim=-1, norm="ortho")
@@ -80,7 +80,7 @@ def likelihood_all_poses(
     Isx = torch.sum(s_points_weights.unsqueeze(0) * ctf_templates_fourier, dim=(-2, -1))
     Isy = torch.sum(s_points_weights * images_fourier, dim=(-2, -1))
 
-    ## Unify to (n_images, n_templates, n_displacements, n_inplanes)
+    # ## Unify to (n_images, n_templates, n_displacements, n_inplanes)
     Ixx = Ixx[:,:,None,None]
     Iyy = Iyy[:,None,None,None]
     Isx = Isx[:,:,None,None]
@@ -108,6 +108,7 @@ def likelihood_all_poses(
                 + lgamma(n_pixels_phys / 2.0 - 2.0) \
                 + p * np.log(2 * Iss)
     log_likelihood_msdw = -p * torch.log(D) - 0.5 * torch.log(A) + constant
+    
     return log_likelihood_msdw
 
 
