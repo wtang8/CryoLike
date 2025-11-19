@@ -36,13 +36,12 @@ class SphereShell:
     azimu_points: torch.Tensor
     polar_points: torch.Tensor
     weight_points: torch.Tensor
-    xyz_points: Optional[torch.Tensor] = None
+    xyz_points: torch.Tensor
 
     def __init__(self,
         radius: float = 1.0,
         dist_eq: float = 1.0 / (2.0 * np.pi),
         uniform_azimuthal_sampling : bool = True,
-        store_cartesian_points : bool = False,
     ) -> None:
         """Class to sample points on a sphere shell of known radius r.
 
@@ -50,8 +49,7 @@ class SphereShell:
             radius (float, optional): Radius of the sphere in Angstrom. Must be positive finite. Defaults to 1.0.
             dist_eq (float, optional): Distance between points at equator. Must be positive finite.
                 Defaults to 1.0/(2.0 * np.pi).
-            azimuthal_sampling (SamplingStrategy, optional): Enum indicating whether to use uniform sampling
-                (the default) or adaptive sampling.
+            uniform_azimuthal_sampling (bool): uniform sampling (true) or adaptive sampling (false).
             compute_cartesian (bool, optional): Whether to populate a cartesian grid for the sphere. If True,
                 the resulting shell will have a cartesian_points member set. Defaults to True.
         """
@@ -86,8 +84,7 @@ class SphereShell:
             self.weight_points[i_point : i_point + n_azimus] = self.weights_polar[i] * radius_sq * d_azimu  ## integrate to 4pir^2
             i_point += n_azimus
         assert i_point == self.n_points
-        if store_cartesian_points:
-            self.xyz_points = self.cartesian_points()
+        self.xyz_points = self.cartesian_points()
         
     def cartesian_points(self):
 

@@ -46,11 +46,6 @@ class TestSphereShell(unittest.TestCase):
         # This is a qualitative check, more rigorous checks would involve specific values
         self.assertGreaterEqual(shell.n_azimus_each_circle.max(), shell.n_azimus_each_circle.min())
 
-    def test_init_store_cartesian_points(self):
-        """Test storing Cartesian points."""
-        shell = SphereShell(store_cartesian_points=True)
-        self.assertIsNotNone(shell.xyz_points)
-
     def test_init_invalid_parameters(self):
         """Test initialization with invalid radius or dist_eq."""
         with self.assertRaisesRegex(ValueError, "spherical shell radius must be positive"):
